@@ -1,12 +1,89 @@
 <script>
 import { SECRET } from '@shell/config/types';
+import Banner from '@components/Banner/Banner';
 import { LabeledInput } from '@components/Form/LabeledInput';
 import LabeledSelect from '@shell/components/form/LabeledSelect';
 import UnitInput from '@shell/components/form/UnitInput';
 import Checkbox from '@components/Form/Checkbox/Checkbox';
 
+function normalizeNetworkDevices(networkDevices) {
+  if(typeof networkDevices === 'string') {
+    networkDevices = networkDevices === '' ? [] : [networkDevices];
+  }
+
+  if(!Array.isArray(networkDevices)) {
+    return [];
+  }
+
+  return networkDevices
+    .map((networkDevice) => {
+      const trimmedNetworkDevice = typeof networkDevice === 'string' ? networkDevice.trim() : '';
+      if(trimmedNetworkDevice === '') {
+        return null;
+      }
+
+      const values = trimmedNetworkDevice.split('=');
+      if(values.length < 2) {
+        return {
+          name:   trimmedNetworkDevice,
+          config: '',
+        };
+      }
+
+      return {
+        name:   values.shift().trim().toLowerCase(),
+        config: values.join('=').trim(),
+      };
+    })
+    .filter(Boolean);
+}
+
+function parseConfiguredNetworkDevices(networkDevices) {
+  const normalizedNetworkDevices = [];
+  const usedDeviceNames = new Set();
+
+  for(const networkDevice of networkDevices) {
+    const deviceName = (networkDevice.name ?? '').trim().toLowerCase();
+    const deviceConfiguration = (networkDevice.config ?? '').trim();
+
+    if(deviceName === '' && deviceConfiguration === '') {
+      continue;
+    }
+
+    if(!/^net\d+$/.test(deviceName)) {
+      return {
+        error: 'cluster.machineConfig.pve.template.networkDevices.validation.deviceName',
+        values: [],
+      };
+    }
+
+    if(deviceConfiguration === '') {
+      return {
+        error: 'cluster.machineConfig.pve.template.networkDevices.validation.deviceConfig',
+        values: [],
+      };
+    }
+
+    if(usedDeviceNames.has(deviceName)) {
+      return {
+        error: 'cluster.machineConfig.pve.template.networkDevices.validation.duplicateDevice',
+        values: [],
+      };
+    }
+
+    usedDeviceNames.add(deviceName);
+    normalizedNetworkDevices.push(`${ deviceName }=${ deviceConfiguration }`);
+  }
+
+  return {
+    error:  null,
+    values: normalizedNetworkDevices,
+  };
+}
+
 export default {
   components: {
+    Banner,
     LabeledInput,
     LabeledSelect,
     UnitInput,
@@ -53,6 +130,7 @@ export default {
         template: this.value.template ? parseInt(this.value.template) : 0,
         isoDevice: this.value.isoDevice ?? '',
         networkInterface: this.value.networkInterface ?? '',
+        networkDevices: normalizeNetworkDevices(this.value.networkDevice),
         sshUser: this.value.sshUser ? this.value.sshUser : 'service',
         sshPort: this.value.sshPort ? parseInt(this.value.sshPort) : 22,
         processorSockets: this.value.processorSockets ? parseInt(this.value.processorSockets) : "",
@@ -62,6 +140,7 @@ export default {
         fullClone: this.value.fullClone ?? false,
         tags: this.value.tags ?? '',
       },
+      networkDevicesValidationError: null,
     }
   },
   created(){
@@ -198,6 +277,13 @@ export default {
         return
       }
 
+      const configuredNetworkDevices = parseConfiguredNetworkDevices(this.currentValue.networkDevices);
+      this.networkDevicesValidationError = configuredNetworkDevices.error;
+      if(this.networkDevicesValidationError !== null) {
+        this.$emit('validationChanged', false);
+        return
+      }
+
       if(this.currentValue.sshUser == '') {
         this.$emit('validationChanged', false);
         return
@@ -238,6 +324,7 @@ export default {
       this.value.template = this.currentValue.template.toString();
       this.value.isoDevice = this.currentValue.isoDevice;
       this.value.networkInterface = this.currentValue.networkInterface;
+      this.value.networkDevice = configuredNetworkDevices.values;
       this.value.sshUser = this.currentValue.sshUser;
       this.value.sshPort = this.currentValue.sshPort.toString();
       this.value.processorSockets = this.currentValue.processorSockets.toString();
@@ -417,6 +504,15 @@ export default {
 
       this.currentValue.template = 0;
     },
+    addNetworkDevice() {
+      this.currentValue.networkDevices.push({
+        name:   '',
+        config: '',
+      });
+    },
+    removeNetworkDevice(index) {
+      this.currentValue.networkDevices.splice(index, 1);
+    },
   },
   computed: {
     disabled(){
@@ -451,10 +547,17 @@ export default {
         return null;
       }
 
-      return this.devices
+      const configuredNetworkDevices = parseConfiguredNetworkDevices(this.currentValue.networkDevices);
+      const options = this.devices
         .filter(device => device.key)
         .filter(device => device.key.startsWith('net'))
         .map(device => device.key);
+
+      for(const networkDevice of configuredNetworkDevices.values) {
+        options.push(networkDevice.split('=')[0]);
+      }
+
+      return [...new Set(options)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     },
   },
 }
@@ -564,6 +667,75 @@ export default {
           label-key="cluster.machineConfig.pve.template.network.label"
           tooltip-key="cluster.machineConfig.pve.template.network.tooltip"
           required
+        />
+      </div>
+    </div>
+    <div class="row mb-20">
+      <div class="col span-12">
+        <Banner
+          color="info"
+          label-key="cluster.machineConfig.pve.template.networkDevices.help"
+        />
+      </div>
+    </div>
+    <div
+      v-for="(networkDevice, index) in currentValue.networkDevices"
+      :key="`network-device-${ index }`"
+      class="row mb-10"
+    >
+      <div class="col span-4">
+        <LabeledInput
+          type="text"
+          :mode="mode"
+          :disabled="disabled"
+          :value="networkDevice.name"
+          @change="e => { networkDevice.name = e.target.value }"
+          label-key="cluster.machineConfig.pve.template.networkDevices.device.label"
+          placeholder="net1"
+        />
+      </div>
+      <div class="col span-6">
+        <LabeledInput
+          type="text"
+          :mode="mode"
+          :disabled="disabled"
+          :value="networkDevice.config"
+          @change="e => { networkDevice.config = e.target.value }"
+          label-key="cluster.machineConfig.pve.template.networkDevices.config.label"
+          placeholder="virtio,bridge=vmbr1"
+        />
+      </div>
+      <div class="col span-2">
+        <button
+          type="button"
+          class="btn role-link mt-25"
+          :disabled="disabled"
+          @click="removeNetworkDevice(index)"
+        >
+          <t k="cluster.machineConfig.pve.template.networkDevices.actions.remove" />
+        </button>
+      </div>
+    </div>
+    <div class="row mb-20">
+      <div class="col span-12">
+        <button
+          type="button"
+          class="btn role-secondary"
+          :disabled="disabled"
+          @click="addNetworkDevice()"
+        >
+          <t k="cluster.machineConfig.pve.template.networkDevices.actions.add" />
+        </button>
+      </div>
+    </div>
+    <div
+      v-if="networkDevicesValidationError"
+      class="row mb-20"
+    >
+      <div class="col span-12">
+        <Banner
+          color="error"
+          :label-key="networkDevicesValidationError"
         />
       </div>
     </div>

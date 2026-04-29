@@ -39,6 +39,18 @@ func (d *Driver) setupHardware(ctx context.Context) error {
 		})
 	}
 
+	for _, networkDevice := range d.NetworkDevices {
+		deviceName, deviceConfiguration, err := parsePveNetworkDevice(networkDevice)
+		if err != nil {
+			return fmt.Errorf("failed to parse network device '%s': %w", networkDevice, err)
+		}
+
+		options = append(options, proxmox.VirtualMachineOption{
+			Name:  deviceName,
+			Value: deviceConfiguration,
+		})
+	}
+
 	if len(options) < 1 {
 		return nil
 	}

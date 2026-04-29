@@ -20,6 +20,7 @@ const (
 	flagTemplateID       = "pve-template"
 	flagISODevice        = "pve-iso-device"
 	flagNetworkInterface = "pve-network-interface"
+	flagNetworkDevice    = "pve-network-device"
 	flagSSHUser          = "pve-ssh-user"
 	flagSSHPort          = "pve-ssh-port"
 	flagProcessorSockets = "pve-processor-sockets"
@@ -61,6 +62,9 @@ type config struct {
 
 	// Bus/Device of the network interface to read machine's IP address from (e.g. 'net0').
 	NetworkInterfaceName string
+
+	// Network devices to configure on the machine (e.g. 'net1=virtio,bridge=vmbr1').
+	NetworkDevices []string
 
 	// If set, number of processor sockets to configure for the machine.
 	ProcessorSockets *int
@@ -124,6 +128,11 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:   flagNetworkInterface,
 			EnvVar: flagEnvVarFromFlagName(flagNetworkInterface),
 			Usage:  "Bus/Device of the network interface to read machine's IP address from (e.g. 'net0')",
+		},
+		mcnflag.StringSliceFlag{
+			Name:   flagNetworkDevice,
+			EnvVar: flagEnvVarFromFlagName(flagNetworkDevice),
+			Usage:  "Network device to configure on the machine (e.g. 'net1=virtio,bridge=vmbr1'); may be specified multiple times",
 		},
 		mcnflag.StringFlag{
 			Name:   flagSSHUser,
@@ -208,9 +217,24 @@ func (d *Driver) SetConfigFromFlags(opts drivers.DriverOptions) error {
 		return fmt.Errorf("flag '--%s' is required", flagISODevice)
 	}
 
-	d.NetworkInterfaceName = opts.String(flagNetworkInterface)
+	d.NetworkInterfaceName = strings.ToLower(strings.TrimSpace(opts.String(flagNetworkInterface)))
 	if d.NetworkInterfaceName == "" {
 		return fmt.Errorf("flag '--%s' is required", flagNetworkInterface)
+	}
+
+	d.NetworkDevices = opts.StringSlice(flagNetworkDevice)
+	networkDeviceNames := make(map[string]struct{}, len(d.NetworkDevices))
+	for _, networkDevice := range d.NetworkDevices {
+		deviceName, _, err := parsePveNetworkDevice(networkDevice)
+		if err != nil {
+			return fmt.Errorf("failed to parse '--%s' value '%s': %w", flagNetworkDevice, networkDevice, err)
+		}
+
+		if _, found := networkDeviceNames[deviceName]; found {
+			return fmt.Errorf("flag '--%s' configures network device '%s' more than once", flagNetworkDevice, deviceName)
+		}
+
+		networkDeviceNames[deviceName] = struct{}{}
 	}
 
 	d.SSHUser = opts.String(flagSSHUser)

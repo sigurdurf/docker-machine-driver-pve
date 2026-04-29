@@ -86,6 +86,10 @@ This driver requires a Proxmox VE template with:
 * empty CD/DVD drive (**NOT** PVE's CloudInit Drive) on IDE, SATA or SCSI bus,
 * DHCP enabled network interface.
 
+The driver writes its own cloud-init seed ISO during cluster creation. If the selected device is Proxmox VE's built-in CloudInit drive, the driver's data will overwrite it and SSH key injection will fail.
+
+Additional network devices can be configured during machine creation with `--pve-network-device`. The interface selected with `--pve-network-interface` may refer either to a NIC already present on the template or to one of the configured network devices.
+
 The template must be placed in the same resource pool where the machines will be deployed (i.e. `--pve-resource-pool`).
 
 You can use [sample Ubuntu Server template](deploy/templates/ubuntu-server) for development and testing.
@@ -103,6 +107,7 @@ You can use [sample Ubuntu Server template](deploy/templates/ubuntu-server) for 
 | `--pve-full-clone`        | `PVE_FULL_CLONE`        | `false`                            | Forces full copy of all disks, even if underlying storage supports linked clones.                                    |
 | `--pve-iso-device`        | `PVE_ISO_DEVICE`        | N/A (required)                     | Bus/Device of the CD/DVD Drive to mount cloud-init ISO to (e.g. `scsi1`).                                            |
 | `--pve-network-interface` | `PVE_NETWORK_INTERFACE` | N/A (required)                     | Bus/Device of the network interface to read machine's IP address from (e.g. `net0`).                                 |
+| `--pve-network-device`    | `PVE_NETWORK_DEVICE`    | *unset*                            | Network device to configure on the machine (e.g. `net1=virtio,bridge=vmbr1`). May be specified multiple times.       |
 | `--pve-ssh-user`          | `PVE_SSH_USER`          | `service`                          | Username for the SSH user that will be created via cloud-init.                                                       |
 | `--pve-ssh-port`          | `PVE_SSH_PORT`          | `22`                               | Port to use when connecting to the machine via SSH.                                                                  |
 | `--pve-processor-sockets` | `PVE_PROCESSOR_SOCKETS` | *unset*                            | If set, number of processor sockets to configure for the machine.                                                    |

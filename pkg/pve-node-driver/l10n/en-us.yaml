@@ -42,6 +42,20 @@ cluster:
         network:
           label: Network interface
           tooltip: Bus/Device of the network interface to read machine‘s IP address from (e.g. `net0`)
+        networkDevices:
+          help: |
+            Optional network devices to configure on the cloned VM. Add one row per NIC using a `net<index>` device name and a Proxmox VE NIC configuration such as `virtio,bridge=vmbr1` or `virtio,bridge=vmbr1,firewall=1`.
+          device:
+            label: Network device
+          config:
+            label: Network configuration
+          actions:
+            add: Add network device
+            remove: Remove
+          validation:
+            deviceName: Network device name must match `net<index>` (for example `net1`).
+            deviceConfig: Network device configuration must not be empty.
+            duplicateDevice: Each network device can only be configured once.
         cloning:
           label: Force full clone
           tooltip: Forces full copy of all disks, even if underlying storage supports linked clones

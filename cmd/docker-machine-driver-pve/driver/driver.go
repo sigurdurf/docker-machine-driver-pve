@@ -81,16 +81,43 @@ func (d *Driver) PreCreateCheck() error {
 		return errors.New("cloud-init ISO device must be of type media=cdrom")
 	}
 
+	if isProxmoxCloudInitDrive(isoDeviceConfig) {
+		return errors.New("cloud-init ISO device must be an empty CD/DVD drive, not Proxmox VE's CloudInit drive")
+	}
+
+	availableNetworkInterfaces := template.VirtualMachineConfig.MergeNets()
+	if availableNetworkInterfaces == nil {
+		availableNetworkInterfaces = map[string]string{}
+	}
+	configuredNetworkDevices := make(map[string]string, len(d.NetworkDevices))
+
+	for _, networkDevice := range d.NetworkDevices {
+		deviceName, deviceConfiguration, err := parsePveNetworkDevice(networkDevice)
+		if err != nil {
+			return fmt.Errorf("failed to parse network device '%s': %w", networkDevice, err)
+		}
+
+		if _, found := configuredNetworkDevices[deviceName]; found {
+			return fmt.Errorf("network device '%s' is configured more than once", deviceName)
+		}
+
+		configuredNetworkDevices[deviceName] = deviceConfiguration
+		availableNetworkInterfaces[deviceName] = deviceConfiguration
+	}
+
 	// Check network interface
-	_, networkInterfaceFound := template.VirtualMachineConfig.MergeNets()[d.NetworkInterfaceName]
+	_, networkInterfaceFound := availableNetworkInterfaces[d.NetworkInterfaceName]
 	if !networkInterfaceFound {
-		return fmt.Errorf("network interface '%s' not found on the template", d.NetworkInterfaceName)
+		return fmt.Errorf("network interface '%s' not found on the template or configured network devices", d.NetworkInterfaceName)
 	}
 
 	log.Debugf("Using resource pool '%s'", resourcePool.PoolID)
 	log.Debugf("Using template name '%s' on node '%s'", template.Name, template.Node)
 	log.Debugf("Using device '%s' for cloud-init ISO", d.ISODeviceName)
 	log.Debugf("Using network interface '%s' for IP address", d.NetworkInterfaceName)
+	for deviceName, deviceConfiguration := range configuredNetworkDevices {
+		log.Debugf("Configuring network device '%s' with '%s'", deviceName, deviceConfiguration)
+	}
 
 	return nil
 }
